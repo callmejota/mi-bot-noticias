@@ -46,18 +46,15 @@ def buscar_y_guardar():
 def enviar_telegram(mensaje):
     token = os.environ.get("TELEGRAM_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if token and chat_id:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "HTML"}
-        try:
-            requests.post(url, json=payload)
-            print("✅ Notificación de Telegram enviada")
-        except Exception as e:
-            print(f"❌ Error enviando Telegram: {e}")
-
-if __name__ == "__main__":
-    # 1. Primero busca y guarda las noticias
-    buscar_y_guardar()
     
-    # 2. Cuando termina, te manda el mensaje
-    enviar_telegram("🚀 <b>¡Bot Actualizado!</b>\nYa tenés noticias frescas de Nieve ❄️, Cripto 💰 y Fútbol ⚽.\n\nCheckealo acá: https://mi-bot-noticias.vercel.app/")
+    print(f"DEBUG: Token encontrado: {bool(token)}")
+    print(f"DEBUG: Chat ID encontrado: {bool(chat_id)}")
+    
+    if not token or not chat_id:
+        print("❌ Error: Faltan las llaves de Telegram en Secrets.")
+        return
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "HTML"}
+    r = requests.post(url, json=payload)
+    print(f"Resultado Telegram: {r.status_code}")
