@@ -15,26 +15,29 @@ TEMAS = {
     "Fútbol ⚽": "Selección Argentina Messi partidos hoy when:1d"
 }
 
-# --- NUEVAS FUNCIONES DE DATOS ---
+# --- FUNCIONES DE DATOS MEJORADAS ---
 
 def obtener_precio_btc():
     try:
-        url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+        # Usamos la API de CoinGecko que es muy estable para Bitcoin
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
         res = requests.get(url).json()
-        return f"{float(res['price']):,.0f}"
-    except:
+        precio = res['bitcoin']['usd']
+        return f"{precio:,.0f}"
+    except Exception as e:
+        print(f"Error BTC: {e}")
         return "N/A"
 
 def obtener_tipo_cambio():
     try:
-        # Usamos una API gratuita para el Yen
         url = "https://open.er-api.com/v6/latest/USD"
         res = requests.get(url).json()
         return f"{res['rates']['JPY']:.2f}"
-    except:
+    except Exception as e:
+        print(f"Error Yen: {e}")
         return "N/A"
 
-# --------------------------------
+# ------------------------------------
 
 def enviar_telegram(mensaje):
     token = os.environ.get("TELEGRAM_TOKEN")
@@ -50,13 +53,13 @@ def enviar_telegram(mensaje):
         requests.post(url, json=payload)
 
 def buscar_y_guardar():
-    # Obtener datos de mercado primero
+    # Obtener datos de mercado
     btc = obtener_precio_btc()
     yen = obtener_tipo_cambio()
 
-    # Encabezado con datos en tiempo real
+    # Encabezado
     cuerpo_mensaje = "<b>📊 MERCADO ACTUAL</b>\n"
-    cuerpo_mensaje += f"💵 <b>USD/JPY:</b> ¥{yen}\n"
+    cuerpo_mensaje += f"💴 <b>USD/JPY:</b> ¥{yen}\n"
     cuerpo_mensaje += f"₿ <b>Bitcoin:</b> ${btc}\n"
     cuerpo_mensaje += "----------------------------\n\n"
     cuerpo_mensaje += "<b>🗞️ RESUMEN DIPI SKI CLUB</b>\n\n"
@@ -84,7 +87,7 @@ def buscar_y_guardar():
                     link = item.find('link').text
                     # Guardar en DB
                     supabase.table("noticias").insert({"titulo": titulo, "url": link, "categoria": categoria}).execute()
-                    # Formatear para Telegram
+                    # Formatear título
                     titulo_corto = titulo.split(" - ")[0]
                     cuerpo_mensaje += f"• <a href='{link}'>{titulo_corto}</a>\n"
         except:
