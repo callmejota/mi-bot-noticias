@@ -8,14 +8,34 @@ URL = os.environ.get("SUPABASE_URL")
 KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(URL, KEY)
 
-# 2. Configuración de Búsquedas (Solo últimas 24 horas)
+# 2. Configuración de Búsquedas (Últimas 24 horas)
 TEMAS = {
     "Nieve ❄️": "Niseko ski resort snow report OR Hokkaido skiing news when:1d",
     "Cripto 💰": "bitcoin ethereum precio noticias español when:1d",
     "Fútbol ⚽": "Selección Argentina Messi partidos hoy when:1d"
 }
 
-# 3. Función para enviar el resumen a Telegram
+# --- NUEVAS FUNCIONES DE DATOS ---
+
+def obtener_precio_btc():
+    try:
+        url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+        res = requests.get(url).json()
+        return f"{float(res['price']):,.0f}"
+    except:
+        return "N/A"
+
+def obtener_tipo_cambio():
+    try:
+        # Usamos una API gratuita para el Yen
+        url = "https://open.er-api.com/v6/latest/USD"
+        res = requests.get(url).json()
+        return f"{res['rates']['JPY']:.2f}"
+    except:
+        return "N/A"
+
+# --------------------------------
+
 def enviar_telegram(mensaje):
     token = os.environ.get("TELEGRAM_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -27,28 +47,28 @@ def enviar_telegram(mensaje):
             "parse_mode": "HTML",
             "disable_web_page_preview": True
         }
-        try:
-            r = requests.post(url, json=payload)
-            print(f"Status Telegram: {r.status_code}")
-        except Exception as e:
-            print(f"Error Telegram: {e}")
+        requests.post(url, json=payload)
 
-# 4. Función Principal: Limpia, Busca, Guarda y Notifica
 def buscar_y_guardar():
-    cuerpo_mensaje = "<b>🗞️ RESUMEN FRESCO DIPI SKI CLUB</b>\n<i>Noticias de las últimas 24hs</i>\n\n"
+    # Obtener datos de mercado primero
+    btc = obtener_precio_btc()
+    yen = obtener_tipo_cambio()
 
-    # Vaciar la base de datos para que la web solo muestre lo nuevo
+    # Encabezado con datos en tiempo real
+    cuerpo_mensaje = "<b>📊 MERCADO ACTUAL</b>\n"
+    cuerpo_mensaje += f"💵 <b>USD/JPY:</b> ¥{yen}\n"
+    cuerpo_mensaje += f"₿ <b>Bitcoin:</b> ${btc}\n"
+    cuerpo_mensaje += "----------------------------\n\n"
+    cuerpo_mensaje += "<b>🗞️ RESUMEN DIPI SKI CLUB</b>\n\n"
+
+    # Limpiar Supabase
     try:
         supabase.table("noticias").delete().neq("id", 0).execute()
-        print("Base de datos limpia para nuevas noticias.")
-    except Exception as e:
-        print(f"Aviso limpieza DB: {e}")
+    except:
+        pass
 
     for categoria, busqueda in TEMAS.items():
-        print(f"Procesando {categoria}...")
         cuerpo_mensaje += f"<b>{categoria}:</b>\n"
-        
-        # URL de Google News con el filtro de tiempo
         url_rss = f"https://news.google.com/rss/search?q={busqueda}&hl=es-419&gl=US&ceid=US:es-419"
         
         try:
@@ -59,26 +79,20 @@ def buscar_y_guardar():
             if not items:
                 cuerpo_mensaje += "• <i>Sin novedades hoy.</i>\n"
             else:
-                for item in items[:3]: # Solo las 3 más importantes
+                for item in items[:3]:
                     titulo = item.find('title').text
                     link = item.find('link').text
-                    
-                    # Guardar en Supabase para que se vea en la web
-                    data = {"titulo": titulo, "url": link, "categoria": categoria}
-                    supabase.table("noticias").insert(data).execute()
-                    
-                    # Limpiar el título (quitar el nombre del diario al final)
+                    # Guardar en DB
+                    supabase.table("noticias").insert({"titulo": titulo, "url": link, "categoria": categoria}).execute()
+                    # Formatear para Telegram
                     titulo_corto = titulo.split(" - ")[0]
                     cuerpo_mensaje += f"• <a href='{link}'>{titulo_corto}</a>\n"
-        except Exception as e:
-            print(f"Error en categoría {categoria}: {e}")
-            cuerpo_mensaje += "• <i>Error al obtener noticias.</i>\n"
+        except:
+            cuerpo_mensaje += "• <i>Error cargando noticias.</i>\n"
         
         cuerpo_mensaje += "\n"
 
     cuerpo_mensaje += "⚡ <i>Actualizado desde Kutchan, Hokkaido</i>"
-    
-    print("Enviando mensaje final...")
     enviar_telegram(cuerpo_mensaje)
 
 if __name__ == "__main__":
