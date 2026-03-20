@@ -43,18 +43,17 @@ def buscar_y_guardar():
         except Exception as e:
             print(f"❌ Error en {categoria}: {e}")
 
-def enviar_telegram(mensaje):
-    token = os.environ.get("TELEGRAM_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+def buscar_y_guardar():
+    # ... (acá está todo tu código que ya funciona) ...
     
-    print(f"DEBUG: Token encontrado: {bool(token)}")
-    print(f"DEBUG: Chat ID encontrado: {bool(chat_id)}")
-    
-    if not token or not chat_id:
-        print("❌ Error: Faltan las llaves de Telegram en Secrets.")
-        return
+    for categoria, busqueda in TEMAS.items():
+        # ... (acá busca las noticias) ...
+        print(f"✅ Guardado en {categoria}")
 
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "HTML"}
-    r = requests.post(url, json=payload)
-    print(f"Resultado Telegram: {r.status_code}")
+    # --- ESTO ES LO NUEVO ---
+    # Asegurate de que esta línea tenga los mismos espacios que el "for" de arriba
+    print("Iniciando envío de Telegram...")
+    enviar_telegram("🚀 ¡Bot Actualizado!")
+
+if __name__ == "__main__":
+    buscar_y_guardar()
