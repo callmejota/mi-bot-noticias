@@ -10,22 +10,39 @@ supabase = create_client(URL, KEY)
 
 # 2. Configuración de Búsquedas (Últimas 24 horas)
 TEMAS = {
-    "Nieve ❄️": "Niseko ski resort snow report OR Hokkaido skiing news when:1d",
+    "Nieve ❄️": "Niseko Hirafu snow report OR skiing news when:1d",
     "Cripto 💰": "bitcoin ethereum precio noticias español when:1d",
     "Fútbol ⚽": "Selección Argentina Messi partidos hoy when:1d"
 }
 
-# --- FUNCIONES DE DATOS MEJORADAS ---
+# --- FUNCIONES DE DATOS EN TIEMPO REAL ---
+
+def obtener_clima_hirafu():
+    try:
+        # Coordenadas exactas de Niseko Hirafu
+        lat, lon = 42.86, 140.70
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,apparent_temperature,weather_code&timezone=Asia%2FTokyo"
+        res = requests.get(url).json()
+        curr = res['current']
+        temp = curr['temperature_2m']
+        feels_like = curr['apparent_temperature']
+        code = curr['weather_code']
+        
+        # Traducción simple de códigos de clima
+        estados = {0: "Despejado ☀️", 1: "Mayormente despejado 🌤️", 2: "Parcialmente nublado ⛅", 3: "Nublado ☁️", 71: "Nieve ligera ❄️", 73: "Nieve moderada ❄️❄️", 75: "Nevada fuerte 🏔️"}
+        estado = estados.get(code, "Nieve/Nubes ❄️")
+        
+        return f"{estado} | {temp}°C (Sensación: {feels_like}°C)"
+    except:
+        return "Clima no disponible ️☁️"
 
 def obtener_precio_btc():
     try:
-        # Usamos la API de CoinGecko que es muy estable para Bitcoin
         url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
         res = requests.get(url).json()
         precio = res['bitcoin']['usd']
         return f"{precio:,.0f}"
-    except Exception as e:
-        print(f"Error BTC: {e}")
+    except:
         return "N/A"
 
 def obtener_tipo_cambio():
@@ -33,11 +50,10 @@ def obtener_tipo_cambio():
         url = "https://open.er-api.com/v6/latest/USD"
         res = requests.get(url).json()
         return f"{res['rates']['JPY']:.2f}"
-    except Exception as e:
-        print(f"Error Yen: {e}")
+    except:
         return "N/A"
 
-# ------------------------------------
+# ---------------------------------------
 
 def enviar_telegram(mensaje):
     token = os.environ.get("TELEGRAM_TOKEN")
@@ -53,12 +69,14 @@ def enviar_telegram(mensaje):
         requests.post(url, json=payload)
 
 def buscar_y_guardar():
-    # Obtener datos de mercado
+    # Obtener toda la info de una
+    clima = obtener_clima_hirafu()
     btc = obtener_precio_btc()
     yen = obtener_tipo_cambio()
 
-    # Encabezado
-    cuerpo_mensaje = "<b>📊 MERCADO ACTUAL</b>\n"
+    # Encabezado Pro
+    cuerpo_mensaje = "<b>🏔️ REPORTE NISEKO HIRAFU</b>\n"
+    cuerpo_mensaje += f"🌡️ <b>Clima:</b> {clima}\n"
     cuerpo_mensaje += f"💴 <b>USD/JPY:</b> ¥{yen}\n"
     cuerpo_mensaje += f"₿ <b>Bitcoin:</b> ${btc}\n"
     cuerpo_mensaje += "----------------------------\n\n"
@@ -85,9 +103,7 @@ def buscar_y_guardar():
                 for item in items[:3]:
                     titulo = item.find('title').text
                     link = item.find('link').text
-                    # Guardar en DB
                     supabase.table("noticias").insert({"titulo": titulo, "url": link, "categoria": categoria}).execute()
-                    # Formatear título
                     titulo_corto = titulo.split(" - ")[0]
                     cuerpo_mensaje += f"• <a href='{link}'>{titulo_corto}</a>\n"
         except:
@@ -95,7 +111,7 @@ def buscar_y_guardar():
         
         cuerpo_mensaje += "\n"
 
-    cuerpo_mensaje += "⚡ <i>Actualizado desde Kutchan, Hokkaido</i>"
+    cuerpo_mensaje += "⚡ <i>Actualizado para DP en Hokkaido</i>"
     enviar_telegram(cuerpo_mensaje)
 
 if __name__ == "__main__":
