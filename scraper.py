@@ -1,7 +1,7 @@
 import os
 import requests
 import xml.etree.ElementTree as ET
-from bs4 import BeautifulSoup
+import re
 from supabase import create_client
 
 # 1. Configuración de Conexiones
@@ -9,14 +9,14 @@ URL = os.environ.get("SUPABASE_URL")
 KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(URL, KEY)
 
-# 2. Configuración de Búsquedas
+# 2. Configuración de Búsquedas (Palabras clave optimizadas para Bing)
 TEMAS = {
-    "Nieve ❄️": "Niseko Hirafu snow report OR skiing news when:1d",
-    "Cripto 💰": "bitcoin ethereum precio noticias español when:1d",
-    "Fútbol ⚽": "Selección Argentina Messi partidos hoy when:1d"
+    "Nieve ❄️": "Niseko ski snow",
+    "Cripto 💰": "bitcoin ethereum criptomonedas",
+    "Fútbol ⚽": "Selección Argentina fútbol"
 }
 
-# --- FUNCIONES DE DATOS ---
+# --- FUNCIONES DE DATOS EN TIEMPO REAL ---
 
 def obtener_clima_hirafu():
     try:
@@ -46,49 +46,7 @@ def obtener_tipo_cambio():
     except:
         return "N/A"
 
-# ¡FUNCIÓN MEJORADA: Salta el escudo de Google y lee la noticia real!
-def extraer_primer_parrafo(url_google):
-    try:
-        # Nos disfrazamos de navegador de PC para que no nos bloqueen
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'}
-        session = requests.Session()
-        
-        # 1. Entramos al link escudo de Google
-        res = session.get(url_google, headers=headers, timeout=8)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # 2. Buscamos la URL REAL que Google esconde en el código
-        url_real = url_google
-        for meta in soup.find_all('meta'):
-            if meta.get('http-equiv', '').lower() == 'refresh':
-                url_real = meta['content'].split('url=')[-1].strip("'\"")
-                break
-        
-        # Si no lo escondió en el meta tag, buscamos el link principal
-        if url_real == url_google:
-            a_tag = soup.find('a')
-            if a_tag and a_tag.get('href'):
-                url_real = a_tag['href']
-
-        # Si por alguna razón seguimos atrapados en Google, cancelamos
-        if 'news.google.com' in url_real:
-            return "Haz clic en el título para leer el desarrollo de la noticia."
-
-        # 3. Entramos a la web REAL del diario (Ej: Infobae, ESPN)
-        res_diario = session.get(url_real, headers=headers, timeout=8)
-        soup_diario = BeautifulSoup(res_diario.text, 'html.parser')
-        
-        # 4. Leemos los textos y nos quedamos con el primer párrafo grande
-        for p in soup_diario.find_all('p'):
-            texto = p.get_text().strip()
-            if len(texto) > 100: # Si tiene más de 100 letras, seguro es el resumen
-                return texto[:220] + "..."
-                
-        return "Haz clic en el título para leer el desarrollo de la noticia."
-    except:
-        return "Haz clic en el título para leer el desarrollo de la noticia."
-
-# --------------------------
+# ---------------------------------------
 
 def enviar_telegram(mensaje):
     token = os.environ.get("TELEGRAM_TOKEN")
@@ -114,22 +72,32 @@ def buscar_y_guardar():
 
     for categoria, busqueda in TEMAS.items():
         cuerpo_mensaje += f"<b>{categoria}:</b>\n"
-        url_rss = f"https://news.google.com/rss/search?q={busqueda}&hl=es-419&gl=US&ceid=US:es-419"
+        
+        # CAMBIO CLAVE: Usamos Bing News que nos regala el texto limpio
+        url_rss = f"https://www.bing.com/news/search?q={busqueda}&format=rss&setLang=es"
         
         try:
-            res = requests.get(url_rss)
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            res = requests.get(url_rss, headers=headers)
             root = ET.fromstring(res.text)
+            items = root.findall('.//item')
             
-            for item in root.findall('.//item')[:2]:
-                titulo_completo = item.find('title').text
-                titulo = titulo_completo.split(" - ")[0]
+            if not items:
+                cuerpo_mensaje += "• <i>Sin novedades hoy.</i>\n\n"
+                continue
+
+            for item in items[:2]:
+                titulo = item.find('title').text
                 link = item.find('link').text
                 
-                fuente_tag = item.find('source')
-                fuente = fuente_tag.text if fuente_tag is not None else "Diario"
-
-                # ¡Ahora el bot usa el súper-lector!
-                parrafo = extraer_primer_parrafo(link)
+                # Bing nos da el párrafo real acá mismo
+                desc_tag = item.find('description')
+                if desc_tag is not None and desc_tag.text:
+                    # Limpiamos basuras de HTML si las hay
+                    resumen = re.sub('<[^<]+?>', '', desc_tag.text)
+                    resumen = resumen[:200] + "..." if len(resumen) > 200 else resumen
+                else:
+                    resumen = "Abre el link para ver los detalles de esta noticia."
 
                 try:
                     supabase.table("noticias").insert({"titulo": titulo, "url": link, "categoria": categoria}).execute()
@@ -137,7 +105,7 @@ def buscar_y_guardar():
                     pass
                 
                 cuerpo_mensaje += f"• <b><a href='{link}'>{titulo}</a></b>\n"
-                cuerpo_mensaje += f"📰 <i>{fuente}</i>: {parrafo}\n\n"
+                cuerpo_mensaje += f"📰 <i>{resumen}</i>\n\n"
         except Exception as e:
             cuerpo_mensaje += "• <i>Error cargando noticias.</i>\n\n"
 
