@@ -52,7 +52,6 @@ def enviar_telegram(mensaje):
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if token and chat_id:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        # Dividimos el mensaje si es muy largo para que Telegram no lo corte
         payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "HTML", "disable_web_page_preview": True}
         requests.post(url, json=payload)
 
@@ -63,7 +62,7 @@ def buscar_y_guardar():
     cuerpo_mensaje += f"🌡️ <b>Clima:</b> {clima}\n"
     cuerpo_mensaje += f"💴 <b>USD/JPY:</b> ¥{yen} | ₿ <b>BTC:</b> ${btc}\n"
     cuerpo_mensaje += "----------------------------\n\n"
-    cuerpo_mensaje += "<b>🗞️ RESUMEN DETALLADO DEL DÍA</b>\n\n"
+    cuerpo_mensaje += "<b>🗞️ RESUMEN DEL DÍA</b>\n\n"
 
     try:
         supabase.table("noticias").delete().neq("id", 0).execute()
@@ -78,32 +77,24 @@ def buscar_y_guardar():
             res = requests.get(url_rss)
             root = ET.fromstring(res.text)
             
-            # Vamos a traer las 2 noticias principales con más texto
-            for item in root.findall('.//item')[:2]:
+            for item in root.findall('.//item')[:2]: # Mantenemos 2 noticias para que sea de lectura rápida
                 titulo_completo = item.find('title').text
                 titulo = titulo_completo.split(" - ")[0]
                 link = item.find('link').text
                 
-                # Buscamos la descripción y tratamos de que sea más larga
-                desc_raw = item.find('description').text if item.find('description') is not None else ""
-                
-                # Limpiamos el texto y permitimos hasta 250 caracteres para que sea un párrafo real
-                import re
-                texto_limpio = re.sub('<[^<]+?>', '', desc_raw) # Quita códigos HTML
-                if len(texto_limpio) > 10:
-                    resumen = texto_limpio[:250] + "..."
-                else:
-                    resumen = "Haz clic en el enlace para leer el desarrollo completo de esta noticia de último momento."
+                # Buscamos la fuente original (Ej: "Sporting News") de forma limpia
+                fuente_tag = item.find('source')
+                fuente = fuente_tag.text if fuente_tag is not None else "Diario"
 
-                # Guardar en Supabase para la web
+                # Guardamos en la base de datos
                 try:
                     supabase.table("noticias").insert({"titulo": titulo, "url": link, "categoria": categoria}).execute()
                 except:
                     pass
                 
-                # Armado del mensaje para Telegram
+                # Armamos el texto para que quede como un reporte profesional
                 cuerpo_mensaje += f"• <b><a href='{link}'>{titulo}</a></b>\n"
-                cuerpo_mensaje += f"{resumen}\n\n"
+                cuerpo_mensaje += f"📰 <i>Fuente: {fuente}</i>\n\n"
         except Exception as e:
             print(f"Error en {categoria}: {e}")
             cuerpo_mensaje += "• <i>Error cargando noticias.</i>\n\n"
