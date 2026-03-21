@@ -1,6 +1,7 @@
 import os
 import requests
 import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
 from supabase import create_client
 
 # 1. Configuración de Conexiones
@@ -8,14 +9,14 @@ URL = os.environ.get("SUPABASE_URL")
 KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(URL, KEY)
 
-# 2. Configuración de Búsquedas (Últimas 24 horas)
+# 2. Configuración de Búsquedas
 TEMAS = {
     "Nieve ❄️": "Niseko Hirafu snow report OR skiing news when:1d",
     "Cripto 💰": "bitcoin ethereum precio noticias español when:1d",
     "Fútbol ⚽": "Selección Argentina Messi partidos hoy when:1d"
 }
 
-# --- FUNCIONES DE DATOS EN TIEMPO REAL ---
+# --- FUNCIONES DE DATOS ---
 
 def obtener_clima_hirafu():
     try:
@@ -45,7 +46,23 @@ def obtener_tipo_cambio():
     except:
         return "N/A"
 
-# ---------------------------------------
+# ¡ESTA ES LA MAGIA NUEVA! Entra a la web y saca el texto real
+def extraer_primer_parrafo(url):
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        parrafos = soup.find_all('p')
+        for p in parrafos:
+            texto = p.get_text().strip()
+            # Si el párrafo tiene más de 80 letras, asumimos que es el comienzo de la nota
+            if len(texto) > 80:
+                return texto[:220] + "..."
+        return "Toca el link para leer la nota completa."
+    except:
+        return "Toca el link para leer la nota completa."
+
+# --------------------------
 
 def enviar_telegram(mensaje):
     token = os.environ.get("TELEGRAM_TOKEN")
@@ -77,26 +94,24 @@ def buscar_y_guardar():
             res = requests.get(url_rss)
             root = ET.fromstring(res.text)
             
-            for item in root.findall('.//item')[:2]: # Mantenemos 2 noticias para que sea de lectura rápida
+            for item in root.findall('.//item')[:2]:
                 titulo_completo = item.find('title').text
                 titulo = titulo_completo.split(" - ")[0]
                 link = item.find('link').text
-                
-                # Buscamos la fuente original (Ej: "Sporting News") de forma limpia
                 fuente_tag = item.find('source')
                 fuente = fuente_tag.text if fuente_tag is not None else "Diario"
 
-                # Guardamos en la base de datos
+                # Leemos el párrafo real
+                parrafo = extraer_primer_parrafo(link)
+
                 try:
                     supabase.table("noticias").insert({"titulo": titulo, "url": link, "categoria": categoria}).execute()
                 except:
                     pass
                 
-                # Armamos el texto para que quede como un reporte profesional
                 cuerpo_mensaje += f"• <b><a href='{link}'>{titulo}</a></b>\n"
-                cuerpo_mensaje += f"📰 <i>Fuente: {fuente}</i>\n\n"
+                cuerpo_mensaje += f"📰 <i>{fuente}</i>: {parrafo}\n\n"
         except Exception as e:
-            print(f"Error en {categoria}: {e}")
             cuerpo_mensaje += "• <i>Error cargando noticias.</i>\n\n"
 
     cuerpo_mensaje += "⚡ <i>Información procesada para DP</i>"
