@@ -19,29 +19,21 @@ TEMAS = {
 
 def obtener_clima_hirafu():
     try:
-        # Coordenadas exactas de Niseko Hirafu
         lat, lon = 42.86, 140.70
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,apparent_temperature,weather_code&timezone=Asia%2FTokyo"
         res = requests.get(url).json()
         curr = res['current']
-        temp = curr['temperature_2m']
-        feels_like = curr['apparent_temperature']
-        code = curr['weather_code']
-        
-        # Traducción simple de códigos de clima
+        temp, feels, code = curr['temperature_2m'], curr['apparent_temperature'], curr['weather_code']
         estados = {0: "Despejado ☀️", 1: "Mayormente despejado 🌤️", 2: "Parcialmente nublado ⛅", 3: "Nublado ☁️", 71: "Nieve ligera ❄️", 73: "Nieve moderada ❄️❄️", 75: "Nevada fuerte 🏔️"}
-        estado = estados.get(code, "Nieve/Nubes ❄️")
-        
-        return f"{estado} | {temp}°C (Sensación: {feels_like}°C)"
+        return f"{estados.get(code, 'Nieve/Nubes ❄️')} | {temp}°C (Sensación: {feels}°C)"
     except:
-        return "Clima no disponible ️☁️"
+        return "Clima no disponible ☁️"
 
 def obtener_precio_btc():
     try:
         url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
         res = requests.get(url).json()
-        precio = res['bitcoin']['usd']
-        return f"{precio:,.0f}"
+        return f"{res['bitcoin']['usd']:,.0f}"
     except:
         return "N/A"
 
@@ -60,29 +52,18 @@ def enviar_telegram(mensaje):
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if token and chat_id:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {
-            "chat_id": chat_id, 
-            "text": mensaje, 
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True
-        }
+        payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "HTML", "disable_web_page_preview": True}
         requests.post(url, json=payload)
 
 def buscar_y_guardar():
-    # Obtener toda la info de una
-    clima = obtener_clima_hirafu()
-    btc = obtener_precio_btc()
-    yen = obtener_tipo_cambio()
+    clima, btc, yen = obtener_clima_hirafu(), obtener_precio_btc(), obtener_tipo_cambio()
 
-    # Encabezado Pro
     cuerpo_mensaje = "<b>🏔️ REPORTE NISEKO HIRAFU</b>\n"
     cuerpo_mensaje += f"🌡️ <b>Clima:</b> {clima}\n"
-    cuerpo_mensaje += f"💴 <b>USD/JPY:</b> ¥{yen}\n"
-    cuerpo_mensaje += f"₿ <b>Bitcoin:</b> ${btc}\n"
+    cuerpo_mensaje += f"💴 <b>USD/JPY:</b> ¥{yen} | ₿ <b>BTC:</b> ${btc}\n"
     cuerpo_mensaje += "----------------------------\n\n"
-    cuerpo_mensaje += "<b>🗞️ RESUMEN DIPI SKI CLUB</b>\n\n"
+    cuerpo_mensaje += "<b>🗞️ RESUMEN DEL DÍA</b>\n\n"
 
-    # Limpiar Supabase
     try:
         supabase.table("noticias").delete().neq("id", 0).execute()
     except:
@@ -95,23 +76,23 @@ def buscar_y_guardar():
         try:
             res = requests.get(url_rss)
             root = ET.fromstring(res.text)
-            items = root.findall('.//item')
+            
+            for item in root.findall('.//item')[:2]: # Bajamos a 2 noticias para que el texto no sea eterno
+                titulo = item.find('title').text.split(" - ")[0]
+                link = item.find('link').text
+                # Sacamos una descripción corta (si Google News la trae)
+                desc_raw = item.find('description').text if item.find('description') is not None else ""
+                # Limpiamos un poco el HTML de la descripción
+                resumen = desc_raw.split("<")[0][:100] + "..." if desc_raw else "Ver más en el link."
 
-            if not items:
-                cuerpo_mensaje += "• <i>Sin novedades hoy.</i>\n"
-            else:
-                for item in items[:3]:
-                    titulo = item.find('title').text
-                    link = item.find('link').text
-                    supabase.table("noticias").insert({"titulo": titulo, "url": link, "categoria": categoria}).execute()
-                    titulo_corto = titulo.split(" - ")[0]
-                    cuerpo_mensaje += f"• <a href='{link}'>{titulo_corto}</a>\n"
+                supabase.table("noticias").insert({"titulo": titulo, "url": link, "categoria": categoria}).execute()
+                
+                cuerpo_mensaje += f"• <b><a href='{link}'>{titulo}</a></b>\n"
+                cuerpo_mensaje += f"<i>{resumen}</i>\n\n"
         except:
-            cuerpo_mensaje += "• <i>Error cargando noticias.</i>\n"
-        
-        cuerpo_mensaje += "\n"
+            cuerpo_mensaje += "• <i>Error cargando noticias.</i>\n\n"
 
-    cuerpo_mensaje += "⚡ <i>Actualizado para DP en Hokkaido</i>"
+    cuerpo_mensaje += "⚡ <i>Actualizado para DP</i>"
     enviar_telegram(cuerpo_mensaje)
 
 if __name__ == "__main__":
