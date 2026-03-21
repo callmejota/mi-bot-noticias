@@ -46,21 +46,47 @@ def obtener_tipo_cambio():
     except:
         return "N/A"
 
-# ¡ESTA ES LA MAGIA NUEVA! Entra a la web y saca el texto real
-def extraer_primer_parrafo(url):
+# ¡FUNCIÓN MEJORADA: Salta el escudo de Google y lee la noticia real!
+def extraer_primer_parrafo(url_google):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=5)
+        # Nos disfrazamos de navegador de PC para que no nos bloqueen
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'}
+        session = requests.Session()
+        
+        # 1. Entramos al link escudo de Google
+        res = session.get(url_google, headers=headers, timeout=8)
         soup = BeautifulSoup(res.text, 'html.parser')
-        parrafos = soup.find_all('p')
-        for p in parrafos:
+        
+        # 2. Buscamos la URL REAL que Google esconde en el código
+        url_real = url_google
+        for meta in soup.find_all('meta'):
+            if meta.get('http-equiv', '').lower() == 'refresh':
+                url_real = meta['content'].split('url=')[-1].strip("'\"")
+                break
+        
+        # Si no lo escondió en el meta tag, buscamos el link principal
+        if url_real == url_google:
+            a_tag = soup.find('a')
+            if a_tag and a_tag.get('href'):
+                url_real = a_tag['href']
+
+        # Si por alguna razón seguimos atrapados en Google, cancelamos
+        if 'news.google.com' in url_real:
+            return "Haz clic en el título para leer el desarrollo de la noticia."
+
+        # 3. Entramos a la web REAL del diario (Ej: Infobae, ESPN)
+        res_diario = session.get(url_real, headers=headers, timeout=8)
+        soup_diario = BeautifulSoup(res_diario.text, 'html.parser')
+        
+        # 4. Leemos los textos y nos quedamos con el primer párrafo grande
+        for p in soup_diario.find_all('p'):
             texto = p.get_text().strip()
-            # Si el párrafo tiene más de 80 letras, asumimos que es el comienzo de la nota
-            if len(texto) > 80:
+            if len(texto) > 100: # Si tiene más de 100 letras, seguro es el resumen
                 return texto[:220] + "..."
-        return "Toca el link para leer la nota completa."
+                
+        return "Haz clic en el título para leer el desarrollo de la noticia."
     except:
-        return "Toca el link para leer la nota completa."
+        return "Haz clic en el título para leer el desarrollo de la noticia."
 
 # --------------------------
 
@@ -98,10 +124,11 @@ def buscar_y_guardar():
                 titulo_completo = item.find('title').text
                 titulo = titulo_completo.split(" - ")[0]
                 link = item.find('link').text
+                
                 fuente_tag = item.find('source')
                 fuente = fuente_tag.text if fuente_tag is not None else "Diario"
 
-                # Leemos el párrafo real
+                # ¡Ahora el bot usa el súper-lector!
                 parrafo = extraer_primer_parrafo(link)
 
                 try:
